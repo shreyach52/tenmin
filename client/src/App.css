@@ -128,3 +128,53 @@ button:hover {
   font-size: 12px;
   color: #6b7280;
 }
+
+.streak {
+  background: #1f2937;
+  border-radius: 14px;
+  padding: 16px 20px;
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.streak-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.tab {
+  padding: 4px 10px;
+  font-size: 13px;
+}
+
+.tab.on {
+  background: #4f46e5;
+}
+
+.streak-line {
+  margin: 0;
+}
+
+.streak-line.ok {
+  color: #86efac;
+}
+
+.streak a {
+  color: #a5b4fc;
+}
+
+button.link {
+  background: none;
+  padding: 0;
+  color: #9ca3af;
+  text-decoration: underline;
+  font-size: 13px;
+}

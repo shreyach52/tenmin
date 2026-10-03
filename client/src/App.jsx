@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import "./App.css";
+import StreakGuard from "./StreakGuard";
 
 const API = "http://localhost:5000";
 const SPRINT_SIZE = 5;
@@ -103,6 +104,7 @@ export default function App() {
           <input type="file" accept="application/pdf" onChange={handleUpload} hidden />
         </label>
       </header>
+      <StreakGuard />
 
       {loading && (
         <p className="status">
