@@ -1,122 +1,179 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useEffect, useState, useCallback } from "react";
+import "./App.css";
 
-function App() {
-  const [count, setCount] = useState(0)
+const API = "http://localhost:5000";
+const SPRINT_SIZE = 5;
+
+export default function App() {
+  const [cards, setCards] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("tenmin-cards")) || [];
+    } catch {
+      return [];
+    }
+  });
+  const [index, setIndex] = useState(0);
+  const [revealed, setRevealed] = useState(false);
+  const [onBreak, setOnBreak] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const total = cards.length;
+  const sprintNo = Math.floor(index / SPRINT_SIZE) + 1;
+  const sprintTotal = Math.ceil(total / SPRINT_SIZE);
+  const sprintStart = (sprintNo - 1) * SPRINT_SIZE;
+  const sprintLen = Math.min(SPRINT_SIZE, total - sprintStart);
+  const endOfSprint = index % SPRINT_SIZE === sprintLen - 1;
+  const finished = onBreak && index === total - 1;
+
+  const next = useCallback(() => {
+    if (total === 0) return;
+    if (onBreak) {
+      if (index < total - 1) {
+        setIndex(index + 1);
+        setOnBreak(false);
+        setRevealed(false);
+      }
+      return;
+    }
+    if (endOfSprint) {
+      setOnBreak(true);
+      return;
+    }
+    setIndex(index + 1);
+    setRevealed(false);
+  }, [total, onBreak, index, endOfSprint]);
+
+  const prev = useCallback(() => {
+    if (onBreak) {
+      setOnBreak(false);
+      return;
+    }
+    if (index > 0) {
+      setIndex(index - 1);
+      setRevealed(false);
+    }
+  }, [onBreak, index]);
+
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === "ArrowRight") next();
+      else if (e.key === "ArrowLeft") prev();
+      else if (e.key === " " && !onBreak && total > 0) {
+        e.preventDefault();
+        setRevealed((r) => !r);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [next, prev, onBreak, total]);
+
+  async function handleUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    setLoading(true);
+    setError("");
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const r = await fetch(`${API}/api/process`, { method: "POST", body: fd });
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || "Something went wrong");
+      setCards(data.cards);
+      setIndex(0);
+      setOnBreak(false);
+      setRevealed(false);
+      localStorage.setItem("tenmin-cards", JSON.stringify(data.cards));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+      e.target.value = "";
+    }
+  }
+
+  const card = cards[index];
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
+    <div className="app">
+      <header>
+        <h1>TenMin</h1>
+        <label className="upload">
+          Upload slides (PDF)
+          <input type="file" accept="application/pdf" onChange={handleUpload} hidden />
+        </label>
+      </header>
 
-      <div className="ticks"></div>
+      {loading && (
+        <p className="status">
+          Reading your slides with a local model. This takes a minute or two...
+        </p>
+      )}
+      {error && <p className="status error">{error}</p>}
 
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
+      {!loading && total === 0 && (
+        <p className="status">Upload a PDF of your slides to get started.</p>
+      )}
 
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
-  )
+      {!loading && total > 0 && (
+        <>
+          <div className="progress">
+            <span>
+              Sprint {sprintNo} of {sprintTotal}
+            </span>
+            <div className="bar">
+              <div
+                className="fill"
+                style={{ width: `${((index + (onBreak ? 1 : 0)) / total) * 100}%` }}
+              />
+            </div>
+            <span>
+              Card {index + 1} / {total}
+            </span>
+          </div>
+
+          {onBreak ? (
+            <div className="card center">
+              {finished ? (
+                <>
+                  <h2>All done</h2>
+                  <p>You went through every card. Nice work.</p>
+                </>
+              ) : (
+                <>
+                  <h2>Sprint {sprintNo} complete</h2>
+                  <p>Stand up, drink some water, then come back.</p>
+                  <button onClick={next}>Start sprint {sprintNo + 1}</button>
+                </>
+              )}
+            </div>
+          ) : (
+            <div className="card">
+              <h2>{card.title}</h2>
+              <ul>
+                {card.points.map((p, i) => (
+                  <li key={i}>{p}</li>
+                ))}
+              </ul>
+              <div className="qa">
+                <p className="q">{card.question}</p>
+                {revealed ? (
+                  <p className="a">{card.answer}</p>
+                ) : (
+                  <button onClick={() => setRevealed(true)}>Show answer</button>
+                )}
+              </div>
+              <small>Source: slides {card.pages.replace("p.", "")}</small>
+            </div>
+          )}
+
+          <div className="nav">
+            <button onClick={prev}>Back</button>
+            <button onClick={next}>Next</button>
+          </div>
+          <p className="hint">Keys: ← → to move, Space to reveal</p>
+        </>
+      )}
+    </div>
+  );
 }
-
-export default App

@@ -83,7 +83,7 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
                 batchPages[0].n === batchPages[batchPages.length - 1].n
                     ? `p.${batchPages[0].n}`
                     : `p.${batchPages[0].n}-${batchPages[batchPages.length - 1].n}`;
-
+            console.log(`Processing ${label} (batch ${Math.floor(i / PAGES_PER_BATCH) + 1} of ${Math.ceil(pageObjs.length / PAGES_PER_BATCH)})`);
             const raw = await askModel(buildPrompt(batchText));
             try {
                 const parsed = JSON.parse(raw);
