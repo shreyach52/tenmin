@@ -112,5 +112,48 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
         res.status(500).json({ error: "Processing failed. Is Ollama running?" });
     }
 });
+async function askText(prompt) {
+    const r = await fetch("http://localhost:11434/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+            model: MODEL,
+            prompt,
+            stream: false,
+            options: { num_ctx: 2048, temperature: 0.4 },
+        }),
+    });
+    const data = await r.json();
+    return (data.response || "").trim();
+}
 
+const HINT_LEVELS = {
+    1: "Only name the data structure or technique that fits (for example 'think about a hash map'), in one or two sentences.",
+    2: "Explain the key idea in plain words in two or three sentences. Do not list steps.",
+    3: "Give an outline of the approach as 3 or 4 short numbered steps in plain words.",
+};
+
+app.post("/api/hint", async (req, res) => {
+    try {
+        const { title, topic, level } = req.body;
+        if (!title) return res.status(400).json({ error: "No problem title" });
+
+        const lvl = Math.min(Math.max(Number(level) || 1, 1), 3);
+        const kind = topic === "sql" ? "SQL" : "data structures and algorithms";
+
+        const prompt = `You are a patient coding mentor. A student is working on the LeetCode problem "${title}" (${kind}).
+Give a hint at this level: ${HINT_LEVELS[lvl]}
+
+Rules:
+- Never write code or SQL.
+- Never give the full solution.
+- If you are not sure what this problem asks, say so instead of guessing.`;
+
+        const hint = await askText(prompt);
+        res.json({ hint, level: lvl });
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ error: "Could not get a hint. Is Ollama running?" });
+    }
+});
 app.listen(5000, () => console.log("Server on http://localhost:5000"));

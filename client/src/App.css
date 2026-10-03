@@ -178,3 +178,30 @@ button.link {
   text-decoration: underline;
   font-size: 13px;
 }
+
+.hint-box {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.hint-text {
+  margin: 0;
+  background: #111827;
+  padding: 10px 12px;
+  border-radius: 8px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.hint-error {
+  margin: 0;
+  color: #f87171;
+  font-size: 13px;
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}

@@ -28,6 +28,7 @@ const PROBLEMS = {
 };
 
 const KEY = "tenmin-streak";
+const API = "http://localhost:5000";
 
 const today = () => new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD
 
@@ -65,6 +66,37 @@ function load() {
 export default function StreakGuard() {
     const [done, setDone] = useState(load);
     const [topic, setTopic] = useState("dsa");
+    const [hint, setHint] = useState("");
+    const [level, setLevel] = useState(0);
+    const [hintLoading, setHintLoading] = useState(false);
+    const [hintError, setHintError] = useState("");
+
+    function resetHint() {
+        setHint("");
+        setLevel(0);
+        setHintError("");
+    }
+
+    async function getHint() {
+        const nextLevel = Math.min(level + 1, 3);
+        setHintLoading(true);
+        setHintError("");
+        try {
+            const r = await fetch(`${API}/api/hint`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ title: pick.title, topic, level: nextLevel }),
+            });
+            const data = await r.json();
+            if (!r.ok) throw new Error(data.error || "Something went wrong");
+            setHint(data.hint);
+            setLevel(nextLevel);
+        } catch (e) {
+            setHintError(e.message);
+        } finally {
+            setHintLoading(false);
+        }
+    }
 
     const list = PROBLEMS[topic];
     const pick = list[dayNumber(today()) % list.length];
@@ -92,13 +124,13 @@ export default function StreakGuard() {
                 <div className="tabs">
                     <button
                         className={topic === "dsa" ? "tab on" : "tab"}
-                        onClick={() => setTopic("dsa")}
+                        onClick={() => { setTopic("dsa"); resetHint(); }}
                     >
                         DSA
                     </button>
                     <button
                         className={topic === "sql" ? "tab on" : "tab"}
-                        onClick={() => setTopic("sql")}
+                        onClick={() => { setTopic("sql"); resetHint(); }}
                     >
                         DBMS / SQL
                     </button>
@@ -115,6 +147,29 @@ export default function StreakGuard() {
                     {pick.title}
                 </a>
             </p>
+            <div className="hint-box">
+                {hint && (
+                    <p className="hint-text">
+                        <strong>Hint {level}/3:</strong> {hint}
+                    </p>
+                )}
+                {hintError && <p className="hint-error">{hintError}</p>}
+                {level < 3 && (
+                    <button onClick={getHint} disabled={hintLoading}>
+                        {hintLoading
+                            ? "Thinking..."
+                            : level === 0
+                                ? "Give me a hint"
+                                : "Need more help"}
+                    </button>
+                )}
+                {hint && (
+                    <small>
+                        AI hint from a small local model. It can be wrong, so check the
+                        problem statement.
+                    </small>
+                )}
+            </div>
 
             {doneToday ? (
                 <p className="streak-line ok">
