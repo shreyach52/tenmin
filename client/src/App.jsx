@@ -16,21 +16,26 @@ export default function App() {
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [onBreak, setOnBreak] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(false); // waiting for the first cards
+  const [processing, setProcessing] = useState(false); // more cards still coming
+  const [progress, setProgress] = useState({ done: 0, batches: 0 });
   const [error, setError] = useState("");
 
   const total = cards.length;
   const sprintNo = Math.floor(index / SPRINT_SIZE) + 1;
   const sprintTotal = Math.ceil(total / SPRINT_SIZE);
   const sprintStart = (sprintNo - 1) * SPRINT_SIZE;
-  const sprintLen = Math.min(SPRINT_SIZE, total - sprintStart);
+  const sprintLen = processing
+    ? SPRINT_SIZE
+    : Math.min(SPRINT_SIZE, total - sprintStart);
   const endOfSprint = index % SPRINT_SIZE === sprintLen - 1;
-  const finished = onBreak && index === total - 1;
+  const atLastLoaded = index >= total - 1;
+  const finished = onBreak && atLastLoaded && !processing;
 
   const next = useCallback(() => {
     if (total === 0) return;
     if (onBreak) {
-      if (index < total - 1) {
+      if (!atLastLoaded) {
         setIndex(index + 1);
         setOnBreak(false);
         setRevealed(false);
@@ -41,9 +46,10 @@ export default function App() {
       setOnBreak(true);
       return;
     }
+    if (atLastLoaded) return; // next card is still being prepared
     setIndex(index + 1);
     setRevealed(false);
-  }, [total, onBreak, index, endOfSprint]);
+  }, [total, onBreak, index, endOfSprint, atLastLoaded]);
 
   const prev = useCallback(() => {
     if (onBreak) {
@@ -72,24 +78,69 @@ export default function App() {
   async function handleUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
+    e.target.value = "";
+
     setLoading(true);
+    setProcessing(false);
     setError("");
+    setCards([]);
+    setIndex(0);
+    setOnBreak(false);
+    setRevealed(false);
+    setProgress({ done: 0, batches: 0 });
+
+    const all = [];
     try {
       const fd = new FormData();
       fd.append("file", file);
       const r = await fetch(`${API}/api/process`, { method: "POST", body: fd });
-      const data = await r.json();
-      if (!r.ok) throw new Error(data.error || "Something went wrong");
-      setCards(data.cards);
-      setIndex(0);
-      setOnBreak(false);
-      setRevealed(false);
-      localStorage.setItem("tenmin-cards", JSON.stringify(data.cards));
+      if (!r.ok) {
+        const data = await r.json().catch(() => ({}));
+        throw new Error(data.error || "Something went wrong");
+      }
+
+      setProcessing(true);
+      const reader = r.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop();
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          if (msg.type === "meta") {
+            setProgress({ done: 0, batches: msg.batches });
+          } else if (msg.type === "cards") {
+            all.push(...msg.cards);
+            setCards([...all]);
+            setProgress({ done: msg.done, batches: msg.batches });
+            if (all.length > 0) setLoading(false);
+          } else if (msg.type === "error") {
+            setError(msg.message);
+          }
+        }
+      }
+
+      if (all.length === 0) {
+        setError((prev) => prev || "No study cards could be made from this PDF.");
+      } else {
+        try {
+          localStorage.setItem("tenmin-cards", JSON.stringify(all));
+        } catch {
+          /* storage unavailable */
+        }
+      }
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
-      e.target.value = "";
+      setProcessing(false);
     }
   }
 
@@ -104,33 +155,46 @@ export default function App() {
           <input type="file" accept="application/pdf" onChange={handleUpload} hidden />
         </label>
       </header>
+
       <StreakGuard />
 
       {loading && (
         <p className="status">
-          Reading your slides with a local model. This takes a minute or two...
+          Reading your slides with a local model. Your first cards will appear
+          in under a minute...
         </p>
       )}
       {error && <p className="status error">{error}</p>}
 
-      {!loading && total === 0 && (
+      {!loading && total === 0 && !error && !processing && (
         <p className="status">Upload a PDF of your slides to get started.</p>
       )}
 
-      {!loading && total > 0 && (
+      {total > 0 && (
         <>
+          {processing && (
+            <p className="progress-note">
+              Still reading your slides: part {progress.done} of{" "}
+              {progress.batches}. You can start studying now.
+            </p>
+          )}
+
           <div className="progress">
             <span>
-              Sprint {sprintNo} of {sprintTotal}
+              Sprint {sprintNo}
+              {processing ? "" : ` of ${sprintTotal}`}
             </span>
             <div className="bar">
               <div
                 className="fill"
-                style={{ width: `${((index + (onBreak ? 1 : 0)) / total) * 100}%` }}
+                style={{
+                  width: `${((index + (onBreak ? 1 : 0)) / total) * 100}%`,
+                }}
               />
             </div>
             <span>
               Card {index + 1} / {total}
+              {processing ? "+" : ""}
             </span>
           </div>
 
@@ -145,7 +209,11 @@ export default function App() {
                 <>
                   <h2>Sprint {sprintNo} complete</h2>
                   <p>Stand up, drink some water, then come back.</p>
-                  <button onClick={next}>Start sprint {sprintNo + 1}</button>
+                  {atLastLoaded ? (
+                    <p className="status">Preparing your next sprint...</p>
+                  ) : (
+                    <button onClick={next}>Start sprint {sprintNo + 1}</button>
+                  )}
                 </>
               )}
             </div>

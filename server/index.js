@@ -58,34 +58,52 @@ function cleanPoints(points) {
 }
 
 app.post("/api/process", upload.single("file"), async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
+    let pageObjs;
+    let totalPages;
+    try {
         const { extractText, getDocumentProxy } = await import("unpdf");
         const pdf = await getDocumentProxy(new Uint8Array(req.file.buffer));
-        const { totalPages, text } = await extractText(pdf, { mergePages: false });
-
-        const pageObjs = text
+        const out = await extractText(pdf, { mergePages: false });
+        totalPages = out.totalPages;
+        pageObjs = out.text
             .map((t, idx) => ({ n: idx + 1, t: t.trim() }))
             .filter((p) => p.t.length > 0);
+    } catch (e) {
+        console.error(e);
+        return res.status(500).json({ error: "Could not read this PDF." });
+    }
 
-        if (pageObjs.length === 0) {
-            return res.status(422).json({
-                error: "No text found. This PDF may be scanned images.",
-            });
-        }
+    if (pageObjs.length === 0) {
+        return res.status(422).json({
+            error: "No text found. This PDF may be scanned images.",
+        });
+    }
 
-        const cards = [];
-        for (let i = 0; i < pageObjs.length; i += PAGES_PER_BATCH) {
-            const batchPages = pageObjs.slice(i, i + PAGES_PER_BATCH);
+    res.setHeader("Content-Type", "application/x-ndjson");
+    res.setHeader("Cache-Control", "no-cache");
+    const send = (obj) => res.write(JSON.stringify(obj) + "\n");
+
+    const batches = Math.ceil(pageObjs.length / PAGES_PER_BATCH);
+    send({ type: "meta", totalPages, batches });
+
+    try {
+        for (let b = 0; b < batches; b++) {
+            const batchPages = pageObjs.slice(
+                b * PAGES_PER_BATCH,
+                (b + 1) * PAGES_PER_BATCH
+            );
             const batchText = batchPages.map((p) => p.t).join("\n\n---\n\n");
-            const label =
-                batchPages[0].n === batchPages[batchPages.length - 1].n
-                    ? `p.${batchPages[0].n}`
-                    : `p.${batchPages[0].n}-${batchPages[batchPages.length - 1].n}`;
-            console.log(`Processing ${label} (batch ${Math.floor(i / PAGES_PER_BATCH) + 1} of ${Math.ceil(pageObjs.length / PAGES_PER_BATCH)})`);
-            const raw = await askModel(buildPrompt(batchText));
+            const first = batchPages[0].n;
+            const last = batchPages[batchPages.length - 1].n;
+            const label = first === last ? `p.${first}` : `p.${first}-${last}`;
+
+            console.log(`Processing ${label} (batch ${b + 1} of ${batches})`);
+
+            const batchCards = [];
             try {
+                const raw = await askModel(buildPrompt(batchText));
                 const parsed = JSON.parse(raw);
                 if (Array.isArray(parsed.cards)) {
                     for (const c of parsed.cards) {
@@ -97,20 +115,23 @@ app.post("/api/process", upload.single("file"), async (req, res) => {
                             pages: label,
                         };
                         if (card.title && card.points.length && card.question && card.answer) {
-                            cards.push(card);
+                            batchCards.push(card);
                         }
                     }
                 }
             } catch {
                 console.log(`Skipped ${label}: model returned invalid JSON`);
             }
-        }
 
-        res.json({ totalPages, cardCount: cards.length, cards });
+            send({ type: "cards", cards: batchCards, done: b + 1, batches });
+        }
     } catch (e) {
         console.error(e);
-        res.status(500).json({ error: "Processing failed. Is Ollama running?" });
+        send({ type: "error", message: "Processing stopped. Is Ollama running?" });
     }
+
+    send({ type: "done" });
+    res.end();
 });
 async function askText(prompt) {
     const r = await fetch("http://localhost:11434/api/generate", {
